@@ -1,0 +1,173 @@
+pragma solidity >=0.4.22 <0.7.0;
+pragma experimental ABIEncoderV2;
+
+contract Ownable {
+    address public owner;
+
+    constructor() public {
+        owner = msg.sender;
+    }
+
+    modifier onlyOwner() {
+        require(msg.sender == owner);
+        _;
+    }
+}
+
+contract Airlections is Ownable {
+    
+    uint8 public votersRegistered;
+    uint8 public candidatesRegistered;
+    uint8 public votesCasted;
+    uint256 public votingCloses;
+    bool public draw;
+    bool public resultsFinalized;
+    
+    struct Candidate {
+                           //Custom data type for the Candidate
+        string name; 
+        uint8 votes; 
+        uint8 regNo;
+    }
+    
+    struct Voter {
+        string name;
+        bytes32 crypto;
+        bool vote;
+        uint256 voteCastTime;
+    }
+    
+    Candidate[] elections;
+    Candidate public winner;
+    
+    mapping(uint8 => bool) public candidateExists;    //to track if a candidate with the same name is registered
+    mapping(uint8=> uint8) public eachCandidate;     // to map each candidate name to respective array index
+    
+    mapping(string => bool) public voterExists;      //to track if a voter with the same name is registered
+    mapping(string=> Voter) public eachVoter;       // to map each voter name to respective Voter data
+    
+    modifier onlyNewVoter(string memory names) {
+        if (voterExists[names] || block.timestamp > votingCloses )
+            revert("This voter is already registered.");
+        _;
+    }
+    
+    modifier onlyNewCandidate(uint8 _regNo) {
+        if (candidateExists[_regNo] || block.timestamp > votingCloses )
+            revert("This Candidate is already registered.");
+        _;
+    }
+
+    constructor(uint8 _hours) public {
+                         //The contract deployer sets the duration and initializes the rest of the variables
+        votersRegistered = 0;
+        candidatesRegistered = 0;
+        votesCasted = 0;
+        draw = false;
+        resultsFinalized = false;
+        winner = Candidate("\x00\x00", 0, 0);
+        votingCloses = block.timestamp + (_hours * 1 hours);
+    }
+    
+    function addVoter(string memory _name, string memory _crypto) public onlyOwner onlyNewVoter(_name) returns (bool) {
+        bytes32 cryptoHash;
+        cryptoHash = keccak256(abi.encodePacked(_crypto));
+        eachVoter[_name] = Voter(_name, cryptoHash, false, 0);
+        voterExists[_name] = true;
+        votersRegistered++;
+        return true;
+    }
+    
+    function addCandidate(string memory _name, uint8 reg) public onlyOwner onlyNewCandidate(reg) returns (bool){
+        Candidate memory can = Candidate(_name, 0, reg);
+        elections.push(can);
+        eachCandidate[reg] = candidatesRegistered;
+        candidateExists[reg] = true;
+        candidatesRegistered++;
+        return true;
+    }
+    
+    function castVote(string memory _name, string memory _crypto, uint8 _candidate) public onlyOwner returns (bool){
+        require(
+            block.timestamp < votingCloses,
+            "Voting has closed."
+        );
+        require(
+            voterExists[_name],
+            "Voter does not exist"
+        );
+        require(
+            candidateExists[_candidate],
+            "Candidate does not exist."
+        );
+        require(
+            !eachVoter[_name].vote,
+            "Voter has already casted vote."
+        );
+        require(
+            eachVoter[_name].crypto == keccak256(abi.encodePacked(_crypto)),
+            "Invalid crypto code."
+        );
+        
+        //If all the requirements are met, register the voter's vote.
+        
+        eachVoter[_name].voteCastTime = block.timestamp;
+        elections[eachCandidate[_candidate]].votes++;
+        votesCasted++;
+        eachVoter[_name].vote = true;
+        return true;
+    }
+    
+    function finalizeWinner() public onlyOwner {
+        require(
+            !resultsFinalized,
+            "Results already finalized."
+        );
+        require(
+            block.timestamp > votingCloses,
+            "The voting is still open."
+        );
+        
+        if(candidatesRegistered == 2){
+            resultsFinalized = true;
+            if(elections[0].votes == elections[1].votes)
+                draw = true;
+            else 
+                winner = elections[0].votes > elections[1].votes ? elections[0] : elections[1];
+        }
+        
+    }
+    
+    function isElectionOpen() public view returns (bool){
+        return( block.timestamp < votingCloses );
+    }
+    
+    function getWinner() public view returns (Candidate memory) {
+        return winner;
+    }
+    
+    function getDrawStatus() public view returns (bool){
+        return draw;
+    }
+    
+    function getVotersCount() public view returns (uint8) {
+        return votersRegistered;
+    }
+    
+    function getVoteCount() public view returns (uint8){
+        return votesCasted;
+    }
+    
+    function getCandidateCount() public view returns (uint8){
+        return candidatesRegistered;
+    }
+    
+    function getVoterStatus(string memory _name) public view returns (bool){
+        return eachVoter[_name].vote;
+    }
+    
+    // function getCandidateDetails(uint8 _reg) public view returns (Candidate){
+    //     return elections[eachCandidate[_candidate]]
+    // }
+    
+}
